@@ -1,0 +1,4 @@
+api_key: "YOUR_SAM_API_KEY"
+gcs_bucket: "your-gcs-bucket-name"
+schedule_time: "06:00"  # Time to run the fetcher daily (24-hour format)
+timezone: "America/New_York"  # Adjust to your preferred timezone

@@ -1,19 +1,16 @@
 FROM python:3.9-slim
 
-# Set the working directory
 WORKDIR /app
 
-# Copy the requirements file
+# Copy requirements and install dependencies
 COPY requirements.txt .
-
-# Install the dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the source code into the container
-COPY src/ ./src/
+# Copy simplified job script
+COPY src/run_job.py ./src/
 
-# Copy the environment variable example
-COPY .env.example .env
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
 
-# Command to run the application
-CMD ["python", "src/main.py"]
+# Run the job (once and exit)
+CMD ["python", "src/run_job.py"]

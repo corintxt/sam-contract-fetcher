@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simplified contract fetcher - runs once and exits.
+SAM.gov federal contract fetcher.
 Triggered by Cloud Scheduler via Cloud Run Jobs.
 """
 
@@ -32,13 +32,15 @@ def fetch_contracts():
     yesterday = datetime.now() - timedelta(days=1)
     posted_from = yesterday.strftime("%m/%d/%Y")
     posted_to = yesterday.strftime("%m/%d/%Y")
+    org_code = "070"  # DHS
 
     params = {
         "api_key": API_KEY,
+        "organizationCode": org_code,
         "postedFrom": posted_from,
         "postedTo": posted_to,
         "active": "true",
-        "limit": 1000
+        "limit": 200  # Increase limit to get more results
     }
 
     log(f"Fetching contracts from {posted_from} to {posted_to}")

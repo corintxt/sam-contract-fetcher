@@ -1,4 +1,4 @@
-# Contract Fetcher Cloud Run
+# Federal Contract Fetcher (GCloud)
 
 Automated daily fetcher for federal contracts from SAM.gov API. Runs as a scheduled Cloud Run Job, fetching contracts and storing them in Google Cloud Storage.
 
@@ -127,7 +127,7 @@ gsutil cp gs://your_bucket_name/contracts/contracts_*.json ./
 
 ## Configuration
 
-The script fetches contracts with these parameters:
+The script currently fetches contracts with these parameters:
 - **Date Range**: Previous day's postings
 - **Organization**: DHS (code: 070)
 - **Notice Types**: Solicitations and Sources Sought
@@ -136,15 +136,6 @@ The script fetches contracts with these parameters:
 Edit `src/run_job.py` to customize these parameters.
 
 ## Troubleshooting
-
-**Job fails to run:**
-```bash
-# Check job status
-gcloud run jobs describe contract-fetcher-job --region=us-central1
-
-# View recent logs
-gcloud logging read 'resource.type=cloud_run_job' --limit=50
-```
 
 **No files in bucket:**
 - Verify bucket name in `.env` matches deployed job
@@ -169,4 +160,4 @@ python src/run_job.py
 
 ## License
 
-[ License Here]
+[License TBD]

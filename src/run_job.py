@@ -32,6 +32,9 @@ def fetch_contracts():
     yesterday = datetime.now() - timedelta(days=1)
     posted_from = yesterday.strftime("%m/%d/%Y")
     posted_to = yesterday.strftime("%m/%d/%Y")
+    # Uncomment to test specific dates
+    # posted_from = "10/24/2025"
+    # posted_to = "10/24/2025"
     org_code = "070"  # DHS
 
     params = {
@@ -50,16 +53,22 @@ def fetch_contracts():
         data = response.json()
         opportunities = data.get("opportunitiesData", [])
         log(f"API returned {len(opportunities)} contracts")
-        return opportunities
+        # Return both the data and the date range for filename
+        return opportunities, posted_from, posted_to
     else:
         log(f"API error: {response.status_code} - {response.text}", "ERROR")
-        return []
+        return [], None, None
 
 def process_contracts(raw_data):
     """Process and simplify contract data"""
     processed = []
     
     for item in raw_data:
+        # Safe navigation for nested objects
+        office_address = item.get("officeAddress") or {}
+        point_of_contact = item.get("pointOfContact") or []
+        first_contact = point_of_contact[0] if point_of_contact else {}
+        
         processed.append({
             "notice_id": item.get("noticeId", ""),
             "title": item.get("title", ""),
@@ -70,10 +79,10 @@ def process_contracts(raw_data):
             "naics_code": item.get("naicsCode", ""),
             "active": item.get("active", ""),
             "organization": item.get("fullParentPathName", ""),
-            "office_city": item.get("officeAddress", {}).get("city", ""),
-            "office_state": item.get("officeAddress", {}).get("state", ""),
-            "contact_email": item.get("pointOfContact", [{}])[0].get("email", "") if item.get("pointOfContact") else "",
-            "contact_phone": item.get("pointOfContact", [{}])[0].get("phone", "") if item.get("pointOfContact") else "",
+            "office_city": office_address.get("city", ""),
+            "office_state": office_address.get("state", ""),
+            "contact_email": first_contact.get("email", ""),
+            "contact_phone": first_contact.get("phone", ""),
             "ui_link": item.get("uiLink", ""),
             "set_aside": item.get("typeOfSetAsideDescription", "")
         })
@@ -105,7 +114,7 @@ def run():
     
     try:
         # Step 1: Fetch contracts
-        raw_contracts = fetch_contracts()
+        raw_contracts, posted_from, posted_to = fetch_contracts()
         
         if not raw_contracts:
             log("No contracts found - this might be normal for the date range")
@@ -115,8 +124,25 @@ def run():
         log(f"Processing {len(raw_contracts)} contracts")
         processed_contracts = process_contracts(raw_contracts)
         
-        # Step 3: Save to local file
-        filename = f"contracts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        # Step 3: Save to local file with posting date
+        if posted_from and posted_to:
+            # Convert date format from MM/DD/YYYY to YYYYMMDD
+            try:
+                date_obj = datetime.strptime(posted_from, "%m/%d/%Y")
+                date_str = date_obj.strftime("%Y%m%d")
+                if posted_from != posted_to:
+                    date_obj_end = datetime.strptime(posted_to, "%m/%d/%Y")
+                    date_str_end = date_obj_end.strftime("%Y%m%d")
+                    filename = f"contracts_{date_str}_to_{date_str_end}.json"
+                else:
+                    filename = f"contracts_{date_str}.json"
+            except ValueError:
+                # Fallback to fetch timestamp if date parsing fails
+                filename = f"contracts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        else:
+            # Fallback to fetch timestamp if no dates available
+            filename = f"contracts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
         with open(filename, 'w') as f:
             json.dump(processed_contracts, f, indent=2)
         

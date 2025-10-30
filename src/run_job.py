@@ -27,156 +27,128 @@ def log(message, level="INFO"):
     print(f"{timestamp} - {level} - {message}")
     sys.stdout.flush()
 
-def send_email_notification(contracts, filename, success=True, error_message=None):
-    """Send email notification via Mailgun"""
+def send_email_notification(contracts, posted_from, posted_to, file_location):
+    """Send email notification with contract summary"""
     
     # Check if emails are enabled
     if not os.getenv('SEND_EMAILS', 'false').lower() == 'true':
-        log("Email notifications disabled")
-        return True
+        log("Email notifications disabled - set SEND_EMAILS=true to enable")
+        return
     
     mailgun_api_key = os.getenv('MAILGUN_API_KEY')
     mailgun_domain = os.getenv('MAILGUN_DOMAIN')
     to_email = os.getenv('NOTIFICATION_EMAIL')
     
     if not all([mailgun_api_key, mailgun_domain, to_email]):
-        log("Email configuration incomplete - skipping email", "WARNING")
-        return True
+        log("Email configuration incomplete - skipping notification", "WARNING")
+        return
     
     try:
-        from_email = f"Contract Monitor <monitor@{mailgun_domain}>"
+        # Create email content
+        contract_count = len(contracts)
+        subject = f"DHS Contract Report - {contract_count} contracts found ({posted_from})"
         
-        if success:
-            # Success email with contract summary
-            contract_count = len(contracts)
-            
-            # Get top 5 contracts by title length (as a proxy for importance)
-            top_contracts = sorted(contracts, key=lambda x: len(x.get('title', '')), reverse=True)[:5]
-            
-            subject = f"Federal Contracts Report - {contract_count} contracts found"
-            
-            # Create HTML email content
-            html_content = f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; margin: 20px;">
-                <h2>📊 Federal Contracts Daily Report</h2>
-                <p><strong>Date:</strong> {datetime.now().strftime('%B %d, %Y')}</p>
-                
-                <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                    <h3>📈 Summary</h3>
-                    <ul>
-                        <li><strong>Contracts Found:</strong> {contract_count}</li>
-                        <li><strong>File:</strong> {filename}</li>
-                    </ul>
-                </div>
+        # Generate HTML table of contracts
+        contracts_table = ""
+        if contracts:
+            contracts_table = "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; width: 100%;'>"
+            contracts_table += """
+            <tr style='background-color: #f2f2f2;'>
+                <th>Title</th>
+                <th>Organization</th>
+                <th>Solicitation #</th>
+                <th>Posted Date</th>
+                <th>Deadline</th>
+                <th>Type</th>
+                <th>Office Location</th>
+                <th>Set Aside</th>
+            </tr>
             """
             
-            if top_contracts:
-                html_content += """
-                <h3>🏆 Top 5 Contracts</h3>
-                <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
-                    <thead>
-                        <tr style="background-color: #4CAF50; color: white;">
-                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Organization</th>
-                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Title</th>
-                            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Posted Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """
-                
-                for i, contract in enumerate(top_contracts):
-                    bg_color = "#f9f9f9" if i % 2 == 0 else "white"
-                    organization = contract.get('organization', 'N/A')[:50]
-                    title = contract.get('title', 'N/A')[:80] + ('...' if len(contract.get('title', '')) > 80 else '')
-                    posted_date = contract.get('posted_date', 'N/A')
-                    
-                    html_content += f"""
-                        <tr style="background-color: {bg_color};">
-                            <td style="padding: 10px; border: 1px solid #ddd;">{organization}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{title}</td>
-                            <td style="padding: 10px; border: 1px solid #ddd;">{posted_date}</td>
-                        </tr>
-                    """
-                
-                html_content += """
-                    </tbody>
-                </table>
+            for contract in contracts[:20]:  # Limit to first 20 for email
+                contracts_table += f"""
+                <tr>
+                    <td><a href="{contract.get('ui_link', '#')}" target="_blank">{contract.get('title', 'N/A')}</a></td>
+                    <td>{contract.get('organization', 'N/A')}</td>
+                    <td>{contract.get('solicitation_number', 'N/A')}</td>
+                    <td>{contract.get('posted_date', 'N/A')}</td>
+                    <td>{contract.get('response_deadline', 'N/A')}</td>
+                    <td>{contract.get('type', 'N/A')}</td>
+                    <td>{contract.get('office_city', 'N/A')}, {contract.get('office_state', 'N/A')}</td>
+                    <td>{contract.get('set_aside', 'N/A')}</td>
+                </tr>
                 """
             
-            html_content += """
-                <p style="margin-top: 30px; color: #666; font-size: 14px;">
-                    This is an automated report from your Federal Contract Monitor.<br>
-                    Data is stored in Google Cloud Storage for further analysis.
-                </p>
-            </body>
-            </html>
-            """
+            contracts_table += "</table>"
             
-            # Plain text version
-            text_content = f"""
-Federal Contracts Daily Report - {datetime.now().strftime('%B %d, %Y')}
-
-Summary:
-- Contracts Found: {contract_count}
-- File: {filename}
-
-This is an automated report from your Federal Contract Monitor.
-            """
-        
+            if len(contracts) > 20:
+                contracts_table += f"<p><em>... and {len(contracts) - 20} more contracts. Full data available in the JSON file.</em></p>"
         else:
-            # Error email
-            subject = "Federal Contracts Report - ERROR"
-            html_content = f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; margin: 20px;">
-                <h2>❌ Federal Contracts Report - Error</h2>
-                <p><strong>Date:</strong> {datetime.now().strftime('%B %d, %Y')}</p>
-                
-                <div style="background-color: #ffebee; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f44336;">
-                    <h3>Error Details</h3>
-                    <p><strong>Error:</strong> {error_message}</p>
-                </div>
-                
-                <p style="color: #666;">Please check the Cloud Run logs for more details.</p>
-            </body>
-            </html>
-            """
+            contracts_table = "<p>No contracts found for this date range.</p>"
+        
+        # HTML email body
+        html_body = f"""
+        <html>
+        <body>
+            <h2>DHS Contract Fetcher Daily Report</h2>
+            <p><strong>Date Range:</strong> {posted_from} to {posted_to}</p>
+            <p><strong>Total Contracts Found:</strong> {contract_count}</p>
+            <p><strong>Data Location:</strong> {file_location}</p>
             
-            text_content = f"""
-Federal Contracts Report - ERROR
+            <h3>Contract Summary:</h3>
+            {contracts_table}
+            
+            <hr>
+            <p><small>This is an automated report from the DHS Contract Fetcher service.</small></p>
+        </body>
+        </html>
+        """
+        
+        # Plain text version
+        text_body = f"""
+DHS Contract Fetcher Daily Report
 
-Date: {datetime.now().strftime('%B %d, %Y')}
-Error: {error_message}
+Date Range: {posted_from} to {posted_to}
+Total Contracts Found: {contract_count}
+Data Location: {file_location}
 
-Please check the Cloud Run logs for more details.
-            """
+Contract Details:
+"""
+        
+        for i, contract in enumerate(contracts[:10], 1):  # First 10 for text version
+            text_body += f"""
+{i}. {contract.get('title', 'N/A')}
+   Organization: {contract.get('organization', 'N/A')}
+   Solicitation: {contract.get('solicitation_number', 'N/A')}
+   Posted: {contract.get('posted_date', 'N/A')}
+   Deadline: {contract.get('response_deadline', 'N/A')}
+   Link: {contract.get('ui_link', 'N/A')}
+"""
+        
+        if len(contracts) > 10:
+            text_body += f"\n... and {len(contracts) - 10} more contracts in the full data file."
         
         # Send email via Mailgun
-        url = f"https://api.mailgun.net/v3/{mailgun_domain}/messages"
+        mailgun_url = f"https://api.mailgun.net/v3/{mailgun_domain}/messages"
+        auth = ("api", mailgun_api_key)
         
         data = {
-            "from": from_email,
+            "from": f"DHS Contract Fetcher <noreply@{mailgun_domain}>",
             "to": to_email,
             "subject": subject,
-            "text": text_content,
-            "html": html_content
+            "text": text_body,
+            "html": html_body
         }
         
-        response = requests.post(
-            url,
-            auth=("api", mailgun_api_key),
-            data=data,
-            timeout=30
-        )
+        response = requests.post(mailgun_url, auth=auth, data=data, timeout=30)
         
-        response.raise_for_status()
-        log(f"Email sent successfully! Message ID: {response.json()['id']}")
-        return True
-        
+        if response.status_code == 200:
+            log(f"✓ Email notification sent successfully to {to_email}")
+        else:
+            log(f"Failed to send email: {response.status_code} - {response.text}", "WARNING")
+            
     except Exception as e:
-        log(f"Failed to send email: {str(e)}", "ERROR")
-        return False
+        log(f"Error sending email notification: {str(e)}", "WARNING")
 
 def fetch_contracts():
     """Fetch contracts from SAM.gov API"""

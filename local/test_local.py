@@ -43,19 +43,31 @@ def fetch_contracts():
     posted_to = yesterday.strftime("%m/%d/%Y")
     
     # Uncomment and modify to test specific dates
-    # posted_from = "10/29/2025"
-    # posted_to = "10/29/2025"
+    # posted_from = "10/25/2025"
+    # posted_to = "10/25/2025"
     
     org_code = "070"  # DHS
 
-    params = {
+    params_old = {
         "api_key": API_KEY,
-        "organizationCode": org_code,
+        "organizationCode": org_code, # uncomment for all organizations
         "postedFrom": posted_from,
         "postedTo": posted_to,
         "active": "true",
-        "limit": 200
+        "limit": 51
     }
+
+    # Testing new parameter format - 
+    # to include multiple codes it should be a list of tuples
+    params = [
+        ("api_key", API_KEY),
+        ("organizationCode", "070"),  # DHS
+        ("organizationCode", "970"),  # DoD
+        ("postedFrom", posted_from),
+        ("postedTo", posted_to),
+        ("active", "true"),
+        ("limit", "25")
+    ]
 
     log(f"Fetching contracts from {posted_from} to {posted_to}")
     response = requests.get(BASE_URL, params=params, timeout=30)
@@ -121,11 +133,11 @@ def send_email_notification(contracts, posted_from, posted_to, file_location):
             contracts_table += """
             <tr style='background-color: #f2f2f2;'>
                 <th>Title</th>
+                <th>Organization</th>
                 <th>Solicitation #</th>
                 <th>Posted Date</th>
                 <th>Deadline</th>
                 <th>Type</th>
-                <th>NAICS</th>
                 <th>Office Location</th>
                 <th>Set Aside</th>
             </tr>
@@ -135,11 +147,11 @@ def send_email_notification(contracts, posted_from, posted_to, file_location):
                 contracts_table += f"""
                 <tr>
                     <td><a href="{contract.get('ui_link', '#')}" target="_blank">{contract.get('title', 'N/A')}</a></td>
+                    <td>{contract.get('organization', 'N/A')}</td>
                     <td>{contract.get('solicitation_number', 'N/A')}</td>
                     <td>{contract.get('posted_date', 'N/A')}</td>
                     <td>{contract.get('response_deadline', 'N/A')}</td>
                     <td>{contract.get('type', 'N/A')}</td>
-                    <td>{contract.get('naics_code', 'N/A')}</td>
                     <td>{contract.get('office_city', 'N/A')}, {contract.get('office_state', 'N/A')}</td>
                     <td>{contract.get('set_aside', 'N/A')}</td>
                 </tr>
@@ -184,6 +196,7 @@ Contract Details:
         for i, contract in enumerate(contracts[:10], 1):  # First 10 for text version
             text_body += f"""
 {i}. {contract.get('title', 'N/A')}
+   Organization: {contract.get('organization', 'N/A')}
    Solicitation: {contract.get('solicitation_number', 'N/A')}
    Posted: {contract.get('posted_date', 'N/A')}
    Deadline: {contract.get('response_deadline', 'N/A')}

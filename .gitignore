@@ -18,8 +18,11 @@ env/
 # IDEs
 .DS_Store
 
-# Google Cloud
-*.json
+# Test outputs
+contracts_*.json
+output/
+
+# Jupyter Notebooks
 !cloudbuild.json
 
 # Exclude service account keys

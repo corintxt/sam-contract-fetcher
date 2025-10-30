@@ -20,6 +20,12 @@ API_KEY = os.getenv("SAM_API_KEY")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 BASE_URL = "https://api.sam.gov/opportunities/v2/search"
 
+# Email configuration
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
+MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN") 
+NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL")
+SEND_EMAILS = os.getenv("SEND_EMAILS", "false").lower() == "true"
+
 # Local testing configuration
 UPLOAD_TO_GCS = False  # Set to True to upload to Google Cloud Storage
 LOCAL_OUTPUT_DIR = "output"  # Directory to save JSON files locally
@@ -92,6 +98,122 @@ def process_contracts(raw_data):
         })
     
     return processed
+
+def send_email_notification(contracts, posted_from, posted_to, file_location):
+    """Send email notification with contract summary"""
+    if not SEND_EMAILS:
+        log("Email notifications disabled - set SEND_EMAILS=true to enable")
+        return
+    
+    if not all([MAILGUN_API_KEY, MAILGUN_DOMAIN, NOTIFICATION_EMAIL]):
+        log("Email configuration incomplete - skipping notification", "WARNING")
+        return
+    
+    try:
+        # Create email content
+        contract_count = len(contracts)
+        subject = f"DHS Contract Report - {contract_count} contracts found ({posted_from})"
+        
+        # Generate HTML table of contracts
+        contracts_table = ""
+        if contracts:
+            contracts_table = "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; width: 100%;'>"
+            contracts_table += """
+            <tr style='background-color: #f2f2f2;'>
+                <th>Title</th>
+                <th>Solicitation #</th>
+                <th>Posted Date</th>
+                <th>Deadline</th>
+                <th>Type</th>
+                <th>NAICS</th>
+                <th>Office Location</th>
+                <th>Set Aside</th>
+            </tr>
+            """
+            
+            for contract in contracts[:20]:  # Limit to first 20 for email
+                contracts_table += f"""
+                <tr>
+                    <td><a href="{contract.get('ui_link', '#')}" target="_blank">{contract.get('title', 'N/A')}</a></td>
+                    <td>{contract.get('solicitation_number', 'N/A')}</td>
+                    <td>{contract.get('posted_date', 'N/A')}</td>
+                    <td>{contract.get('response_deadline', 'N/A')}</td>
+                    <td>{contract.get('type', 'N/A')}</td>
+                    <td>{contract.get('naics_code', 'N/A')}</td>
+                    <td>{contract.get('office_city', 'N/A')}, {contract.get('office_state', 'N/A')}</td>
+                    <td>{contract.get('set_aside', 'N/A')}</td>
+                </tr>
+                """
+            
+            contracts_table += "</table>"
+            
+            if len(contracts) > 20:
+                contracts_table += f"<p><em>... and {len(contracts) - 20} more contracts. Full data available in the JSON file.</em></p>"
+        else:
+            contracts_table = "<p>No contracts found for this date range.</p>"
+        
+        # HTML email body
+        html_body = f"""
+        <html>
+        <body>
+            <h2>DHS Contract Fetcher Daily Report</h2>
+            <p><strong>Date Range:</strong> {posted_from} to {posted_to}</p>
+            <p><strong>Total Contracts Found:</strong> {contract_count}</p>
+            <p><strong>Data Location:</strong> {file_location}</p>
+            
+            <h3>Contract Summary:</h3>
+            {contracts_table}
+            
+            <hr>
+            <p><small>This is an automated report from the DHS Contract Fetcher service.</small></p>
+        </body>
+        </html>
+        """
+        
+        # Plain text version
+        text_body = f"""
+DHS Contract Fetcher Daily Report
+
+Date Range: {posted_from} to {posted_to}
+Total Contracts Found: {contract_count}
+Data Location: {file_location}
+
+Contract Details:
+"""
+        
+        for i, contract in enumerate(contracts[:10], 1):  # First 10 for text version
+            text_body += f"""
+{i}. {contract.get('title', 'N/A')}
+   Solicitation: {contract.get('solicitation_number', 'N/A')}
+   Posted: {contract.get('posted_date', 'N/A')}
+   Deadline: {contract.get('response_deadline', 'N/A')}
+   Link: {contract.get('ui_link', 'N/A')}
+"""
+        
+        if len(contracts) > 10:
+            text_body += f"\n... and {len(contracts) - 10} more contracts in the full data file."
+        
+        # Send email via Mailgun
+        mailgun_url = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
+        auth = ("api", MAILGUN_API_KEY)
+        
+        data = {
+            "from": f"DHS Contract Fetcher <noreply@{MAILGUN_DOMAIN}>",
+            "to": NOTIFICATION_EMAIL,
+            "subject": subject,
+            "text": text_body,
+            "html": html_body
+        }
+        
+        response = requests.post(mailgun_url, auth=auth, data=data, timeout=30)
+        
+        if response.status_code == 200:
+            log(f"✓ Email notification sent successfully to {NOTIFICATION_EMAIL}")
+        else:
+            log(f"Failed to send email: {response.status_code} - {response.text}", "WARNING")
+            
+    except Exception as e:
+        log(f"Error sending email notification: {str(e)}", "WARNING")
 
 def upload_to_gcs(bucket_name, source_file, destination_path):
     """Upload file to Google Cloud Storage"""
@@ -183,6 +305,12 @@ def run():
                 log("✗ GCS upload failed, but local file saved successfully")
         else:
             log("GCS upload disabled - file saved locally only")
+        
+        # Step 7: Send email notification (if configured)
+        file_location = local_filepath
+        if UPLOAD_TO_GCS and GCS_BUCKET_NAME:
+            file_location = f"gs://{GCS_BUCKET_NAME}/contracts/{filename}"
+        send_email_notification(processed_contracts, posted_from, posted_to, file_location)
         
         # Success summary
         log("=" * 60)

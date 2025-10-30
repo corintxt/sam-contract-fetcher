@@ -29,6 +29,20 @@ if [ -z "$PROJECT_ID" ] || [ -z "$REGION" ] || [ -z "$SAM_API_KEY" ] || [ -z "$G
     exit 1
 fi
 
+# Email configuration (optional)
+SEND_EMAILS=${SEND_EMAILS:-false}
+if [ "$SEND_EMAILS" = "true" ]; then
+    if [ -z "$MAILGUN_API_KEY" ] || [ -z "$MAILGUN_DOMAIN" ] || [ -z "$NOTIFICATION_EMAIL" ]; then
+        echo "⚠️  Warning: Email notifications enabled but missing configuration!"
+        echo "Please ensure your .env file contains:"
+        echo "  - MAILGUN_API_KEY"
+        echo "  - MAILGUN_DOMAIN"
+        echo "  - NOTIFICATION_EMAIL"
+        echo "Continuing deployment without email functionality..."
+        SEND_EMAILS=false
+    fi
+fi
+
 echo "🚀 Starting deployment to Google Cloud..."
 echo "   Project: ${PROJECT_ID}"
 echo "   Region: ${REGION}"
@@ -47,10 +61,17 @@ gcloud builds submit --tag gcr.io/${PROJECT_ID}/${JOB_NAME}
 
 # Step 3: Deploy as Cloud Run Job (not Service)
 echo "☁️  Deploying as Cloud Run Job..."
+# Build environment variables string
+ENV_VARS="SAM_API_KEY=${SAM_API_KEY},GCS_BUCKET_NAME=${GCS_BUCKET_NAME},PROJECT_ID=${PROJECT_ID},REGION=${REGION},LOG_LEVEL=${LOG_LEVEL},SEND_EMAILS=${SEND_EMAILS}"
+
+if [ "$SEND_EMAILS" = "true" ]; then
+    ENV_VARS="${ENV_VARS},MAILGUN_API_KEY=${MAILGUN_API_KEY},MAILGUN_DOMAIN=${MAILGUN_DOMAIN},NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}"
+fi
+
 gcloud run jobs deploy ${JOB_NAME} \
   --image gcr.io/${PROJECT_ID}/${JOB_NAME} \
   --region ${REGION} \
-  --set-env-vars "SAM_API_KEY=${SAM_API_KEY},GCS_BUCKET_NAME=${GCS_BUCKET_NAME},PROJECT_ID=${PROJECT_ID},REGION=${REGION},LOG_LEVEL=${LOG_LEVEL}" \
+  --set-env-vars "${ENV_VARS}" \
   --memory 512Mi \
   --task-timeout 900
 
@@ -84,8 +105,20 @@ gcloud scheduler jobs create http contract-fetcher-daily \
 echo ""
 echo "✅ Deployment complete!"
 echo ""
+echo "📊 Configuration Summary:"
+echo "  - Job Name: ${JOB_NAME}"
+echo "  - Schedule: Daily at 6:00 AM EST"
+echo "  - Storage: gs://${GCS_BUCKET_NAME}/contracts/"
+echo "  - Email Notifications: ${SEND_EMAILS}"
+if [ "$SEND_EMAILS" = "true" ]; then
+    echo "  - Notification Email: ${NOTIFICATION_EMAIL}"
+fi
+echo ""
 echo "📊 Next steps:"
 echo "  1. Test the job: gcloud run jobs execute ${JOB_NAME} --region=${REGION}"
 echo "  2. View logs: gcloud logging read 'resource.type=cloud_run_job AND resource.labels.job_name=${JOB_NAME}' --limit=50"
 echo "  3. Check GCS: gsutil ls gs://${GCS_BUCKET_NAME}/contracts/"
+if [ "$SEND_EMAILS" = "true" ]; then
+    echo "  4. Verify email delivery to ${NOTIFICATION_EMAIL}"
+fi
 echo ""

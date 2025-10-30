@@ -18,6 +18,9 @@ env/
 # IDEs
 .DS_Store
 
+# Test script
+mailgun_test.py
+
 # Test outputs
 contracts_*.json
 output/

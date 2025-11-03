@@ -12,6 +12,7 @@ import traceback
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from google.cloud import storage
+from google.cloud import bigquery
 
 # Load environment variables
 load_dotenv()
@@ -19,6 +20,9 @@ load_dotenv()
 # Configuration
 API_KEY = os.getenv("SAM_API_KEY")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT")
+BIGQUERY_DATASET = "contracts_data"
+BIGQUERY_TABLE = "contracts"
 BASE_URL = "https://api.sam.gov/opportunities/v2/search"
 
 def log(message, level="INFO"):
@@ -220,6 +224,51 @@ def upload_to_gcs(bucket_name, source_file, destination_path):
     blob.upload_from_filename(source_file)
     log(f"Uploaded to gs://{bucket_name}/{destination_path}")
 
+def save_to_bigquery(contracts):
+    """Save contracts directly to BigQuery"""
+    try:
+        bq_client = bigquery.Client(project=GCP_PROJECT_ID)
+        table_id = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+        
+        # Prepare data for BigQuery
+        rows_to_insert = []
+        for contract in contracts:
+            # Convert date strings to proper format
+            posted_date = contract.get('posted_date', '')[:10] if contract.get('posted_date') else None
+            deadline = contract.get('response_deadline', '')[:10] if contract.get('response_deadline') else None
+            
+            row = {
+                "notice_id": contract.get('notice_id', ''),
+                "title": contract.get('title', ''),
+                "solicitation_number": contract.get('solicitation_number', ''),
+                "posted_date": posted_date,
+                "response_deadline": deadline,
+                "type": contract.get('type', ''),
+                "naics_code": contract.get('naics_code', ''),
+                "active": contract.get('active', ''),
+                "organization": contract.get('organization', ''),
+                "office_city": contract.get('office_city', ''),
+                "office_state": contract.get('office_state', ''),
+                "contact_email": contract.get('contact_email', ''),
+                "contact_phone": contract.get('contact_phone', ''),
+                "ui_link": contract.get('ui_link', ''),
+                "set_aside": contract.get('set_aside', '')
+            }
+            rows_to_insert.append(row)
+        
+        # Insert rows into BigQuery
+        errors = bq_client.insert_rows_json(table_id, rows_to_insert)
+        
+        if errors:
+            log(f"Errors inserting rows to BigQuery: {errors}", "ERROR")
+            raise Exception(f"BigQuery insert failed: {errors}")
+        
+        log(f"✓ Loaded {len(rows_to_insert)} rows to BigQuery table {table_id}")
+        
+    except Exception as e:
+        log(f"Error saving to BigQuery: {str(e)}", "ERROR")
+        raise
+
 def run():
     """Main execution function"""
     log("=" * 60)
@@ -276,7 +325,10 @@ def run():
         destination = f"contracts/{filename}"
         upload_to_gcs(GCS_BUCKET_NAME, filename, destination)
         
-        # Step 5: Cleanup
+        # Step 5: Save to BigQuery
+        save_to_bigquery(processed_contracts)
+        
+        # Step 6: Cleanup
         os.remove(filename)
         log(f"Removed local file {filename}")
         
@@ -284,9 +336,10 @@ def run():
         log("=" * 60)
         log(f"✓ Successfully processed {len(processed_contracts)} contracts")
         log(f"✓ Data saved to gs://{GCS_BUCKET_NAME}/{destination}")
+        log(f"✓ Data loaded to BigQuery table {GCP_PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}")
         log("=" * 60)
         
-        # Step 6: Send email notification (if configured)
+        # Step 7: Send email notification (if configured)
         send_email_notification(processed_contracts, posted_from, posted_to, f"gs://{GCS_BUCKET_NAME}/{destination}")
         
         return 0

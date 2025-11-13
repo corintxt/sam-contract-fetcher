@@ -1,31 +1,56 @@
 # Federal Contract Fetcher (GCloud)
 
-Automated daily fetcher for federal contracts from SAM.gov API. Runs as a scheduled Cloud Run Job, fetching contracts and storing them in Google Cloud Storage.
+Automated daily fetcher for federal contracts from SAM.gov API. Runs as a scheduled Cloud Run Job, fetching contracts and storing them in Google Cloud Storage and BigQuery.
 
-## Features
-
-- 🔄 Runs automatically every day at 6 AM EST
-- 📦 Fetches federal contract opportunities from SAM.gov
-- ☁️ Serverless deployment using Cloud Run Jobs
-- 💾 Stores data in Google Cloud Storage (JSON format)
-- 🚀 Simple single-file architecture
-- 📊 Built-in logging for monitoring
+- Runs automatically every day at 6 AM EST
+- Fetches federal contract opportunities from SAM.gov
+- Stores data in Google Cloud Storage (JSON format)
+- Automatically syncs to BigQuery for analysis
+- Email notifications via Mailgun
 
 ## Project Structure
 
 ```
 contract-fetcher-cloud-run/
 ├── src/
-│   └── run_job.py          # Single file with all fetching, processing, and storage logic
+│   ├── main.py             # Main orchestrator - coordinates all modules
+│   ├── fetcher.py          # Contract fetching and processing
+│   ├── storage.py          # GCS and BigQuery storage operations
+│   ├── notifier.py         # Email notification via Mailgun
+├── local/
+│   └── test_local.py       # Local testing script
 ├── .env                     # Environment variables (not committed)
 ├── .env.template            # Template for environment configuration
 ├── .gitignore               # Git ignore rules
 ├── Dockerfile               # Container definition
 ├── README.md                # Documentation
 ├── deploy.sh                # Automated deployment script
-├── requirements.txt         # Python dependencies (3 packages)
-└── notes.md                 # Development notes
+└── requirements.txt         # Python dependencies
 ```
+
+## Modular Architecture
+
+The application is organized into modules:
+
+### `main.py` - Main Orchestrator
+Entry point that coordinates all operations
+
+### `fetcher.py` - Contract Fetching
+Handles SAM.gov API interactions:
+- `fetch_contracts()` - Fetches raw contract data
+- `process_contracts()` - Transforms data into simplified format
+
+### `storage.py` - Data Storage
+Manages all persistence operations:
+- `save_to_local_file()` - Local JSON storage
+- `upload_to_gcs()` - Google Cloud Storage backup
+- `save_to_bigquery()` - BigQuery data warehouse sync
+
+### `notifier.py` - Email Notifications
+Sends email reports via Mailgun:
+- `send_email_notification()` - Formatted email with contract summary
+- Includes both HTML and plain text versions
+- Shows top 20 contracts in table format
 
 ## Requirements
 
@@ -33,6 +58,8 @@ contract-fetcher-cloud-run/
 - Google Cloud account with billing enabled
 - SAM.gov API key ([get one here](https://open.gsa.gov/api/sam-api/))
 - Google Cloud SDK (`gcloud` CLI)
+- BigQuery dataset and table (see setup below)
+- (Optional) Mailgun account for email notifications
 
 ## Setup Instructions
 
@@ -51,6 +78,12 @@ GCS_BUCKET_NAME=your_gcs_bucket_name_here
 PROJECT_ID=your_gcp_project_id
 REGION=us-central1
 LOG_LEVEL=INFO
+
+# Optional: Email notifications
+SEND_EMAILS=true
+MAILGUN_API_KEY=your_mailgun_api_key
+MAILGUN_DOMAIN=your_mailgun_domain
+NOTIFICATION_EMAIL=recipient@example.com
 ```
 
 ### 2. Create GCS Bucket
@@ -63,13 +96,25 @@ gsutil mb -p YOUR_PROJECT_ID -c STANDARD -l us-central1 gs://your_bucket_name
 gsutil ls
 ```
 
-### 3. Install Dependencies (for local testing)
+### 3. Create BigQuery Dataset and Table
+
+```bash
+# Create dataset
+bq mk --dataset --location=us-central1 YOUR_PROJECT_ID:contracts_data
+
+# Create table with schema
+bq mk --table \
+  YOUR_PROJECT_ID:contracts_data.contracts \
+  notice_id:STRING,title:STRING,solicitation_number:STRING,posted_date:DATE,response_deadline:DATE,type:STRING,naics_code:STRING,active:STRING,organization:STRING,office_city:STRING,office_state:STRING,contact_email:STRING,contact_phone:STRING,ui_link:STRING,set_aside:STRING
+```
+
+### 4. Install Dependencies (for local testing)
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Deploy to Google Cloud
+### 5. Deploy to Google Cloud
 
 ```bash
 # Make deploy script executable
@@ -112,11 +157,31 @@ gcloud logging read 'resource.type=cloud_run_job AND resource.labels.job_name=co
 ### View Results
 
 ```bash
-# List uploaded contract files
+# List uploaded contract files in GCS
 gsutil ls gs://your_bucket_name/contracts/
 
 # Download latest file
 gsutil cp gs://your_bucket_name/contracts/contracts_*.json ./
+
+# Query BigQuery
+bq query --use_legacy_sql=false "
+SELECT 
+  date(posted_date) as date,
+  COUNT(*) as num_contracts,
+  COUNT(DISTINCT organization) as num_agencies
+FROM \`YOUR_PROJECT_ID.contracts_data.contracts\`
+GROUP BY date
+ORDER BY date DESC
+LIMIT 10
+"
+
+# View recent contracts
+bq query --use_legacy_sql=false "
+SELECT title, organization, posted_date, ui_link
+FROM \`YOUR_PROJECT_ID.contracts_data.contracts\`
+ORDER BY posted_date DESC
+LIMIT 10
+"
 ```
 
 ## Monitoring
@@ -124,16 +189,50 @@ gsutil cp gs://your_bucket_name/contracts/contracts_*.json ./
 - **Cloud Run Jobs Console**: https://console.cloud.google.com/run/jobs
 - **Cloud Scheduler Console**: https://console.cloud.google.com/cloudscheduler
 - **Cloud Storage Console**: https://console.cloud.google.com/storage
+- **BigQuery Console**: https://console.cloud.google.com/bigquery
+
+### Check Job Status
+
+```bash
+# View recent executions
+gcloud run jobs executions list --job=contract-fetcher-job --region=us-central1 --limit=10
+
+# Check logs for errors
+gcloud logging read 'resource.type=cloud_run_job AND resource.labels.job_name=contract-fetcher-job' \
+  --limit=100 --format="table(timestamp,severity,textPayload)"
+
+# Query BigQuery for row count
+bq query --use_legacy_sql=false "SELECT COUNT(*) FROM \`YOUR_PROJECT_ID.contracts_data.contracts\`"
+```
 
 ## Configuration
 
 The script currently fetches contracts with these parameters:
 - **Date Range**: Previous day's postings
 - **Organization**: DHS (code: 070)
-- **Notice Types**: Solicitations and Sources Sought
+- **Status**: Active contracts only
 - **Limit**: 200 contracts per fetch
 
-Edit `src/run_job.py` to customize these parameters.
+Edit `src/fetcher.py` to customize these parameters.
+
+### BigQuery Schema
+
+The BigQuery table uses the following schema:
+- `notice_id` (STRING) - Unique notice identifier
+- `title` (STRING) - Contract title
+- `solicitation_number` (STRING) - Solicitation number
+- `posted_date` (DATE) - Date posted
+- `response_deadline` (DATE) - Response deadline
+- `type` (STRING) - Contract type
+- `naics_code` (STRING) - NAICS code
+- `active` (STRING) - Active status
+- `organization` (STRING) - Full organization path
+- `office_city` (STRING) - Office city
+- `office_state` (STRING) - Office state
+- `contact_email` (STRING) - Contact email
+- `contact_phone` (STRING) - Contact phone
+- `ui_link` (STRING) - Link to SAM.gov
+- `set_aside` (STRING) - Set-aside description
 
 ## Troubleshooting
 
@@ -142,20 +241,51 @@ Edit `src/run_job.py` to customize these parameters.
 - Check if API returned data (may be normal for date range)
 - Review logs for errors
 
+**BigQuery table empty:**
+- Check logs for BigQuery insert errors
+- Verify `PROJECT_ID` environment variable is set correctly
+- Ensure table schema matches the data structure
+- Run query to verify: `bq query "SELECT COUNT(*) FROM \`PROJECT.contracts_data.contracts\`"`
+
+**No email received:**
+- Verify `SEND_EMAILS=true` in environment variables
+- Check Mailgun credentials are correct
+- Review logs for email sending errors
+- Emails only sent when contracts are found (or explicitly on zero results)
+
 **API rate limits:**
 - SAM.gov API has rate limits
 - Once limits hit, need to wait until next day
+- Check API response in logs for rate limit messages
 
 ## Development
 
-To test locally:
+### Local Testing
 
 ```bash
-# Set environment variables
-source .env
+# Test locally with the test script
+cd local
+python test_local.py
 
-# Run the script
-python src/run_job.py
+# Or run main script directly
+cd ..
+python src/main.py
+```
+
+### Using Individual Modules
+
+You can import and use modules independently:
+
+```python
+from src.fetcher import fetch_contracts, process_contracts
+from src.storage import save_to_bigquery
+
+# Fetch and process
+raw_contracts, date_from, date_to = fetch_contracts(api_key="YOUR_KEY")
+processed = process_contracts(raw_contracts)
+
+# Save to BigQuery
+save_to_bigquery(processed, project_id="your-project")
 ```
 
 ## License

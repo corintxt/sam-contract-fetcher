@@ -6,11 +6,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy simplified job script
-COPY src/run_job.py ./src/
+# Copy all source modules
+COPY src/*.py ./src/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Run the job (once and exit)
-CMD ["python", "src/run_job.py"]
+# Run the main job orchestrator (once and exit)
+CMD ["python", "src/main.py"]

@@ -20,6 +20,7 @@ load_dotenv()
 
 # Configuration
 API_KEY = os.getenv("SAM_API_KEY")
+ORG_CODES = os.getenv("ORG_CODES", "070")  # Comma-separated org codes, default to DHS
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 GCP_PROJECT_ID = os.getenv("PROJECT_ID")
 BIGQUERY_DATASET = "contracts_data"
@@ -71,9 +72,13 @@ def run():
         return 1
     
     try:
+        # Parse org codes from environment variable
+        org_codes_list = [code.strip() for code in ORG_CODES.split(",") if code.strip()]
+        log(f"Fetching contracts for organization codes: {org_codes_list}")
+        
         # Step 1: Fetch contracts
         log("Fetching contracts from SAM.gov API...")
-        raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY)
+        raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY, org_codes=org_codes_list)
         log(f"API returned {len(raw_contracts)} contracts")
         
         if not raw_contracts:

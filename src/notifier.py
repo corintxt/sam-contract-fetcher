@@ -62,7 +62,7 @@ def send_email_notification(
             {contracts_table}
             
             <hr>
-            <p><small>This is an automated report from the DHS Contract Fetcher service.</small></p>
+            <p><small>This is an automated report from the SAM Contract Fetcher service.</small></p>
         </body>
         </html>
         """

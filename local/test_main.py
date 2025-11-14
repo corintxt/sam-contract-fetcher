@@ -97,9 +97,13 @@ def run():
         
         # Step 2: Fetch contracts
         log("Fetching contracts from SAM.gov API...")
-        # To test specific dates, uncomment and modify:
-        # raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY, posted_from="10/25/2025", posted_to="10/25/2025")
-        raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY)
+        # To test specific dates and/or org codes, uncomment and modify:
+        # raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY, posted_from="10/25/2025", posted_to="10/25/2025", org_codes=["070", "097"])
+        
+        # Example: Multiple org codes (070=DHS, 097=DOD, 1700=Air Force)
+        # raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY, org_codes=["070", "097", "1700"])
+        
+        raw_contracts, posted_from, posted_to = fetch_contracts(API_KEY, org_codes=["070", "075"])
         log(f"API returned {len(raw_contracts)} contracts")
         
         if not raw_contracts:

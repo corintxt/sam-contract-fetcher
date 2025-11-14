@@ -16,7 +16,7 @@ def fetch_contracts(
     api_key: str,
     posted_from: Optional[str] = None,
     posted_to: Optional[str] = None,
-    org_code: str = "070"
+    org_codes: Optional[List[str]] = None
 ) -> Tuple[List[Dict], str, str]:
     """
     Fetch contracts from SAM.gov API.
@@ -25,34 +25,60 @@ def fetch_contracts(
         api_key: SAM.gov API key
         posted_from: Start date in MM/DD/YYYY format (defaults to yesterday)
         posted_to: End date in MM/DD/YYYY format (defaults to yesterday)
-        org_code: Organization code (default: 070 for DHS)
+        org_codes: List of organization codes (default: ["070"] for DHS)
         
     Returns:
         Tuple of (contracts list, posted_from date, posted_to date)
     """
+    # Default org codes if not provided
+    if org_codes is None:
+        org_codes = ["070"]
+    
     # Default to yesterday if dates not provided
     if not posted_from or not posted_to:
         yesterday = datetime.now() - timedelta(days=1)
         posted_from = yesterday.strftime("%m/%d/%Y")
         posted_to = yesterday.strftime("%m/%d/%Y")
     
-    params = {
-        "api_key": api_key,
-        "organizationCode": org_code,
-        "postedFrom": posted_from,
-        "postedTo": posted_to,
-        "active": "true",
-        "limit": 200
-    }
+    # Fetch contracts for each org code separately and combine results
+    all_opportunities = []
+    seen_notice_ids = set()  # To avoid duplicates
+    
+    for org_code in org_codes:
+        print(f"Fetching contracts for org code: {org_code}")
+        
+        params = {
+            "api_key": api_key,
+            "organizationCode": org_code,
+            "postedFrom": posted_from,
+            "postedTo": posted_to,
+            "active": "true",
+            "limit": 200
+        }
 
-    response = requests.get(BASE_URL, params=params, timeout=30)
+        response = requests.get(BASE_URL, params=params, timeout=30)
+        
+        # Debug: Print the actual URL being called
+        # print(f"DEBUG: API URL: {response.url}")
+        print(f"Status Code: {response.status_code}")
 
-    if response.status_code == 200:
-        data = response.json()
-        opportunities = data.get("opportunitiesData", [])
-        return opportunities, posted_from, posted_to
-    else:
-        raise Exception(f"API error: {response.status_code} - {response.text}")
+        if response.status_code == 200:
+            data = response.json()
+            opportunities = data.get("opportunitiesData", [])
+            print(f"DEBUG: Found {len(opportunities)} contracts for org {org_code}")
+            
+            # Add unique contracts only
+            for opp in opportunities:
+                notice_id = opp.get("noticeId")
+                if notice_id and notice_id not in seen_notice_ids:
+                    seen_notice_ids.add(notice_id)
+                    all_opportunities.append(opp)
+        else:
+            print(f"WARNING: API error for org {org_code}: {response.status_code} - {response.text[:200]}")
+            # Continue with other org codes instead of failing completely
+    
+    print(f"DEBUG: Total unique contracts across all orgs: {len(all_opportunities)}")
+    return all_opportunities, posted_from, posted_to
 
 
 def process_contracts(raw_data: List[Dict]) -> List[Dict]:

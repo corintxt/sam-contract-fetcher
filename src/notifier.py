@@ -44,7 +44,7 @@ def send_email_notification(
     try:
         # Create email content
         contract_count = len(contracts)
-        subject = f"DHS Contract Report - {contract_count} contracts found ({posted_from})"
+        subject = f"Government Contract Report - {contract_count} contracts found ({posted_from})"
         
         # Generate HTML table of contracts
         contracts_table = _generate_html_table(contracts)
@@ -53,7 +53,7 @@ def send_email_notification(
         html_body = f"""
         <html>
         <body>
-            <h2>DHS Contract Fetcher Daily Report</h2>
+            <h2>Government Contract Fetcher Daily Report</h2>
             <p><strong>Date Range:</strong> {posted_from} to {posted_to}</p>
             <p><strong>Total Contracts Found:</strong> {contract_count}</p>
             <p><strong>Data Location:</strong> {file_location}</p>
@@ -75,7 +75,7 @@ def send_email_notification(
         auth = ("api", mailgun_api_key)
         
         data = {
-            "from": f"DHS Contract Fetcher <noreply@{mailgun_domain}>",
+            "from": f"SAM Contract Fetcher <noreply@{mailgun_domain}>",
             "to": to_email,
             "subject": subject,
             "text": text_body,
@@ -109,7 +109,7 @@ def _generate_html_table(contracts: List[Dict]) -> str:
     </tr>
     """
     
-    for contract in contracts[:20]:  # Limit to first 20 for email
+    for contract in contracts:  # Include all contracts
         table += f"""
         <tr>
             <td><a href="{contract.get('ui_link', '#')}" target="_blank">{contract.get('title', 'N/A')}</a></td>
@@ -124,9 +124,6 @@ def _generate_html_table(contracts: List[Dict]) -> str:
         """
     
     table += "</table>"
-    
-    if len(contracts) > 20:
-        table += f"<p><em>... and {len(contracts) - 20} more contracts. Full data available in the JSON file.</em></p>"
     
     return table
 
@@ -148,7 +145,7 @@ Data Location: {file_location}
 Contract Details:
 """
     
-    for i, contract in enumerate(contracts[:10], 1):  # First 10 for text version
+    for i, contract in enumerate(contracts, 1):  # Include all contracts
         text_body += f"""
 {i}. {contract.get('title', 'N/A')}
    Organization: {contract.get('organization', 'N/A')}
@@ -157,8 +154,5 @@ Contract Details:
    Deadline: {contract.get('response_deadline', 'N/A')}
    Link: {contract.get('ui_link', 'N/A')}
 """
-    
-    if len(contracts) > 10:
-        text_body += f"\n... and {len(contracts) - 10} more contracts in the full data file."
     
     return text_body

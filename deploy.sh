@@ -17,6 +17,7 @@ fi
 # Configuration
 export JOB_NAME=${JOB_NAME:-contract-fetcher-job}
 export LOG_LEVEL=${LOG_LEVEL:-INFO}
+export ORG_CODES=${ORG_CODES:-070}  # Default to DHS if not set
 
 # Validate required variables
 if [ -z "$PROJECT_ID" ] || [ -z "$REGION" ] || [ -z "$SAM_API_KEY" ] || [ -z "$GCS_BUCKET_NAME" ]; then
@@ -62,11 +63,15 @@ gcloud builds submit --tag gcr.io/${PROJECT_ID}/${JOB_NAME}
 # Step 3: Deploy as Cloud Run Job (not Service)
 echo "☁️  Deploying as Cloud Run Job..."
 # Build environment variables string
-ENV_VARS="SAM_API_KEY=${SAM_API_KEY},GCS_BUCKET_NAME=${GCS_BUCKET_NAME},PROJECT_ID=${PROJECT_ID},REGION=${REGION},LOG_LEVEL=${LOG_LEVEL},SEND_EMAILS=${SEND_EMAILS}"
+# Note: ORG_CODES contains commas, so we use ^:^ delimiter syntax per gcloud escaping rules
+ENV_VARS="^:^SAM_API_KEY=${SAM_API_KEY}:ORG_CODES=${ORG_CODES}:GCS_BUCKET_NAME=${GCS_BUCKET_NAME}:PROJECT_ID=${PROJECT_ID}:REGION=${REGION}:LOG_LEVEL=${LOG_LEVEL}:SEND_EMAILS=${SEND_EMAILS}"
 
 if [ "$SEND_EMAILS" = "true" ]; then
-    ENV_VARS="${ENV_VARS},MAILGUN_API_KEY=${MAILGUN_API_KEY},MAILGUN_DOMAIN=${MAILGUN_DOMAIN},NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}"
+    ENV_VARS="${ENV_VARS}:MAILGUN_API_KEY=${MAILGUN_API_KEY}:MAILGUN_DOMAIN=${MAILGUN_DOMAIN}:NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}"
 fi
+
+echo "🔍 Debug - ORG_CODES value: ${ORG_CODES}"
+echo "🔍 Debug - ENV_VARS: ${ENV_VARS}"
 
 gcloud run jobs deploy ${JOB_NAME} \
   --image gcr.io/${PROJECT_ID}/${JOB_NAME} \

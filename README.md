@@ -8,6 +8,8 @@ Automated daily fetcher for federal contracts from SAM.gov API. Runs as a schedu
 - Automatically syncs to BigQuery for analysis
 - Email notifications via Mailgun
 
+For a more descriptive explanation see [Documentation](/docs/Documentation.md)
+
 ## Project Structure
 
 ```
@@ -234,30 +236,6 @@ The BigQuery table uses the following schema:
 - `ui_link` (STRING) - Link to SAM.gov
 - `set_aside` (STRING) - Set-aside description
 
-## Troubleshooting
-
-**No files in bucket:**
-- Verify bucket name in `.env` matches deployed job
-- Check if API returned data (may be normal for date range)
-- Review logs for errors
-
-**BigQuery table empty:**
-- Check logs for BigQuery insert errors
-- Verify `PROJECT_ID` environment variable is set correctly
-- Ensure table schema matches the data structure
-- Run query to verify: `bq query "SELECT COUNT(*) FROM \`PROJECT.contracts_data.contracts\`"`
-
-**No email received:**
-- Verify `SEND_EMAILS=true` in environment variables
-- Check Mailgun credentials are correct
-- Review logs for email sending errors
-- Emails only sent when contracts are found (or explicitly on zero results)
-
-**API rate limits:**
-- SAM.gov API has rate limits
-- Once limits hit, need to wait until next day
-- Check API response in logs for rate limit messages
-
 ## Development
 
 ### Local Testing
@@ -290,4 +268,4 @@ save_to_bigquery(processed, project_id="your-project")
 
 ## License
 
-[License TBD]
+Distributed under MIT License
